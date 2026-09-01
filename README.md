@@ -1,18 +1,19 @@
-# Gewu（格物）
+# Gewu
 
-Gewu 是业务中立的 Python Agent Runtime Monorepo。它提供进程内 Agent 执行、模型与工具循环、
-会话状态、上下文压缩、Workspace VFS、Skill、Scene 和执行协调，不包含任何订阅方的身份、
-权限、组织和资源绑定规则。
+Gewu is a business-neutral Python Agent Runtime monorepo. It provides in-process Agent execution,
+a model and tool loop, conversation state, context compaction, Workspace VFS, skills, scenes, and
+execution coordination without embedding subscriber identity, authorization, organization, or
+resource-binding rules.
 
 ## Projects
 
-| 工程 | Python 包 | 职责 |
+| Project | Python package | Responsibility |
 | --- | --- | --- |
-| `packages/gewu-core` | `gewu-core` | 配置、日志、数据库、Redis、HTTP 和通用基础设施 |
-| `packages/agent-runtime` | `gewu-agent-runtime` | Agent 执行、Tool、Workspace、Skill、Scene 和持久化协议 |
+| `packages/gewu-core` | `gewu-core` | Configuration, logging, database, Redis, HTTP, and shared infrastructure |
+| `packages/agent-runtime` | `gewu-agent-runtime` | Agent execution, tools, workspaces, skills, scenes, and persistence protocols |
 
-订阅方通过 `SubscriberRuntimeProvider -> PreparedAgentTurn -> AgentRuntime` 接入，具体业务实现
-位于各自独立的订阅方仓库中。
+Subscribers integrate through `SubscriberRuntimeProvider -> PreparedAgentTurn -> AgentRuntime`.
+Business-specific implementations live in separate subscriber repositories.
 
 ## Development
 
