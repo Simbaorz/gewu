@@ -1,5 +1,7 @@
 # Gewu
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 **Gewu (格物) is a provider-neutral, embeddable Python runtime for building stateful
 server-side AI agents.**
 
