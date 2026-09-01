@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gewu-agent-runtime"
+version = "0.1.0"
+description = "Provider-neutral in-process Agent Runtime"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["agent", "runtime", "llm", "tools", "workspace", "self-hosted"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
+dependencies = [
+    "gewu-core",
+    "google-re2==1.1.20251105",
+    "pydantic==2.13.4",
+    "tiktoken==0.12.0",
+]
+
+[tool.uv.sources]
+gewu-core = { workspace = true }
+
+[project.optional-dependencies]
+mysql = [
+    "aiomysql==0.3.2",
+    "greenlet==3.5.0",
+    "sqlalchemy==2.0.49",
+]
+redis = ["redis==6.4.0"]
+host = ["httpx==0.28.1"]
+providers = [
+    "anthropic==0.100.0",
+    "httpx==0.28.1",
+    "openai==2.36.0",
+]
+all = [
+    "aiomysql==0.3.2",
+    "anthropic==0.100.0",
+    "greenlet==3.5.0",
+    "httpx==0.28.1",
+    "openai==2.36.0",
+    "redis==6.4.0",
+    "sqlalchemy==2.0.49",
+]
+
+[project.urls]
+Homepage = "https://gitee.com/simbaorz/gewu"
+Documentation = "https://gitee.com/simbaorz/gewu/tree/test/docs"
+Repository = "https://gitee.com/simbaorz/gewu.git"
+Issues = "https://gitee.com/simbaorz/gewu/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gewu_agent_runtime"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/LICENSE", "/README.md", "/pyproject.toml", "/src", "/tests"]
