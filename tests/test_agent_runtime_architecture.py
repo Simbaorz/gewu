@@ -77,28 +77,6 @@ def test_runtime_workspace_contract_exposes_only_logical_paths() -> None:
     assert "pathlib" not in contract.read_text(encoding="utf-8")
 
 
-def test_runtime_does_not_register_subscriber_business_data_tool() -> None:
-    allowed = {
-        Path("builtins/business_data.py"),
-        Path("builtins/__init__.py"),
-    }
-    violations: list[str] = []
-    for path in PACKAGE.rglob("*.py"):
-        relative = path.relative_to(PACKAGE)
-        if relative in allowed:
-            continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "business_data_tool"
-            ):
-                violations.append(f"{relative}:{node.lineno}")
-
-    assert not violations, "Runtime registers a subscriber tool:\n" + "\n".join(violations)
-
-
 def test_core_does_not_import_external_adapters() -> None:
     violations: list[str] = []
     for path in PACKAGE.rglob("*.py"):

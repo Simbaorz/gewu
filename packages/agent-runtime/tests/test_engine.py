@@ -368,7 +368,7 @@ async def test_engine_preserves_historical_sensitive_trace_policy_after_tool_rev
             (
                 ToolCall(
                     tool_call_id="sensitive-1",
-                    name="revoked_business_data",
+                    name="revoked_sensitive_lookup",
                     arguments={},
                 ),
             ),
