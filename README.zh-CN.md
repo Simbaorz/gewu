@@ -2,38 +2,168 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-**Gewu（格物）是一个模型提供商无关、可嵌入的 Python 运行时，用于构建有状态的服务端 AI Agent。**
+**Gewu（格物）是一套模型提供商无关、可嵌入的 Python Agent Runtime，用于构建受治理、
+有状态、运行于服务端的 AI Agent。**
 
-Gewu 负责模型与 Tool 执行循环、上下文构建、持久化会话记忆、上下文压缩、逻辑
-Workspace、Skill、Scene 与 Run 协调。宿主应用继续掌控身份、授权、模型选择、数据访问与
-传输协议。
+Gewu 将宿主已经授权的模型、ToolSet、逻辑 Workspace、Skill 与 Scene Catalog，以及持久化
+后端组织成可持续运行的 Agent 会话。它负责模型与 Tool 执行循环、上下文构建、会话记忆、
+上下文压缩、可暂停与恢复的用户交互，以及 Run 协调；身份、权限、组织策略、模型访问、
+业务数据与传输协议仍由宿主应用掌控。
+
+Gewu 尤其适合构建可私有化部署的组织知识 Agent。宿主可以将经过整理的 Wiki 暴露为逻辑
+Workspace，用 Scene 划分知识范围，用 Skill 提供可复用的工作方法，再通过授权 Tool 接入实时
+事实。Agent 由此可以按需查阅相关知识、获取当前数据，而无需将业务规则或凭据放入 Runtime。
+
+这套体系的整体目标，是让企业能够以可控的方式构建具备实际能力的知识 Agent，默认不依赖
+通用桌面 Agent，也不强制引入向量数据库。
 
 > **项目状态：** Alpha。Gewu 正在积极开发中，在首个稳定版本发布前，公开 API 可能发生
 > 变化。
 
-## 为什么选择 Gewu
+## Gewu 在体系中的位置
 
-Gewu 面向已经拥有后端产品、希望加入 Agent 能力，但不希望将业务策略迁入 Agent 框架的
-团队。
+Gewu 是 Runtime 层，不是一套完整的知识库产品或 SaaS 应用。
 
-- **由宿主控制能力：** 每个 Turn 都接收已经完成授权的模型、ToolSet、Workspace、Prompt，
-  以及可选的 Skill 或 Scene Catalog。
-- **持久化会话记忆：** Conversation、仅追加消息、带版本的 Runtime State、Run、可暂停的
-  Ask 流程和累计压缩均可跨越单次模型调用持续存在。
-- **受管理的模型上下文：** Gewu 重建与模型提供商无关的消息，保留 Tool Call 结构，在计算
-  上下文时包含 Tool Schema 与图片，并保护模型上下文窗口。
-- **两级压缩：** 先从模型投影中清除低价值的历史 Tool Result，再用累计摘要替换更早的会话
-  前缀。
-- **逻辑 Workspace VFS：** 通过已授权挂载提供逻辑路径，不向 Runtime 泄露物理存储或业务
-  组织结构。
-- **模型提供商无关的执行：** 核心循环只依赖模型协议，并提供 OpenAI 兼容 API、Anthropic
-  和中国联通开放服务的可选适配器。
-- **面向生产的协调机制：** MySQL 是参考事实存储，Redis 提供可丢弃的 State Cache 与分布式
-  Run Lease。
-- **明确的所有权边界：** Runtime 数据使用
-  `subscriber_id + principal_id + principal_type` 确定作用域。
+```text
+Web / Admin / API / 消息渠道
+                  |
+                  v
+宿主应用
+  |-- 认证用户并解析组织策略
+  |-- 授权模型、Scene、Skill、Tool 与 Workspace Mount
+  |-- 管理 Wiki 内容与实时业务数据服务
+  `-- 准备一次 Agent Turn
+                  |
+                  v
+Gewu Agent Runtime
+  |-- 执行模型与 Tool 循环
+  |-- 构建并压缩模型上下文
+  |-- 持久化 Conversation、Message、Run 与 Runtime State
+  |-- 将 Scene 与 Skill 投影到会话上下文
+  `-- 协调并发执行和暂停中的 Run
+                  |
+       +----------+-----------+
+       |          |           |
+       v          v           v
+      模型     Workspace      授权 Tool
+                            （实时事实与操作）
+```
 
-## Runtime 核心流程
+这条边界是刻意设计的：订阅方应用可以依赖 Gewu，但 Gewu 不得反向依赖订阅方的身份系统、
+业务权限、组织层级、Wiki Schema 或数据接口。
+
+## 核心能力
+
+| 能力 | Gewu 提供的内容 |
+| --- | --- |
+| Agent 执行 | 流式、模型提供商无关的模型与 Tool 循环，包含结构化生命周期事件、有界迭代，以及明确的完成、暂停与失败状态 |
+| 持久化会话 | 仅追加 Message、带版本的 Conversation State、Invocation Run、幂等记录、Attachment、Pending Ask State 与不可变压缩版本 |
+| 上下文管理 | 从持久化记录重建上下文，保留 Tool Call 结构，统计多模态内容与 Token，并保护模型上下文窗口 |
+| 上下文压缩 | 用 Micro Compact 清理低价值历史 Tool Result，再用模型生成的 Full Compact 维护累计会话摘要 |
+| 逻辑 Workspace VFS | 使用能力约束的逻辑 Mount 隐藏物理存储，并将多个经宿主授权的知识来源组合为同一个 Agent 视图 |
+| Scene | 带有逻辑根路径、描述以及可选 Required Skill 工作流程的授权知识范围 |
+| Skill | 仅在获得授权且实际需要时加载到会话中的可复用工作指令 |
+| Tool | 十一个可选、业务中立的文件、搜索、受控执行、用户澄清与 Skill Tool，以及 Python 原生 Tool 扩展机制 |
+| 用户交互 | 通过 `ask_user` 进行结构化澄清，并支持持久化暂停和精确恢复原 Run |
+| 所有权与协调 | 统一的 `subscriber_id + principal_id + principal_type` 所有权、MySQL 持久化、Redis State Cache 与分布式 Run Lease |
+| 模型接入 | 基于协议的模型执行，以及 OpenAI 兼容 API、Anthropic 和中国联通开放服务的可选适配器 |
+
+## 知识、工作方法与实时事实
+
+Gewu 有意将几种不同性质的上下文分开：
+
+```text
+Scene       Agent 应当在哪里工作
+Skill       Agent 应当怎样开展工作
+Workspace   Agent 可以查阅哪些知识与证据
+Tool        宿主允许 Agent 获取哪些实时事实或执行哪些操作
+```
+
+### Scene 作为知识范围
+
+Scene 指向当前 Workspace 中一个已经授权的逻辑路径。宿主选择 Scene 后，Gewu 会加入一条
+Meta Message，向模型说明 Scene 名称、根路径、描述与绑定的工作流程。Gewu 不会把整个 Scene
+一次性复制进模型上下文，而是要求 Agent 发现相关入口，只读取解决当前问题所需的证据。
+
+如果 Scene 绑定了必需的 Skill，Runtime 会要求 Agent 在处理该 Scene 前加载它。这样，上层
+应用可以把一组知识与稳定的工作方法组合起来，而不必把所有方法固化到全局 System Prompt。
+
+### Skill 作为可复用工作方法
+
+Skill 保存任务相关的工作指令，并由宿主已经完成权限过滤的 Catalog 提供。Gewu 只向模型列出
+获得授权的 Skill，通过 `skill` Tool 按需加载完整内容，记录调用状态，并保持 Skill 内容与
+当前有效模型上下文一致。
+
+### 不强制向量索引的 Wiki 知识
+
+对于经过整理的 Wiki 或 Markdown 知识，宿主可以将其挂载到 Workspace，让 Agent 使用
+`list`、`glob`、`grep` 与 `read` 主动浏览。这种方式保留目录、文档与章节结构，并让内容修改
+立即可见，不强制经过切片、Embedding 和重新索引流水线。
+
+Gewu 不是内置的 RAG 引擎，也不认为文件导航能够取代所有语料上的语义检索。当知识规模或
+文档格式需要时，宿主可以将全文检索、向量召回、重排或任意混合检索策略作为授权 Tool 注入
+Runtime。
+
+### 实时业务事实留在 Runtime 之外
+
+订单、库存、客户、指标、工单等实时事实属于宿主应用。宿主通过边界明确、已经授权的 Tool
+暴露这些能力，而不是让 Gewu 理解具体业务 Schema，或让模型不受限制地访问数据库。业务数据
+访问、凭据、行级权限和审计策略仍由真正拥有这些数据的系统负责。
+
+## 持久化上下文与记忆
+
+### 从持久化记录重建上下文
+
+每个 Turn 中，Gewu 都会根据持久化 Runtime 记录重建模型输入，而不是将内存消息列表视为
+事实来源。上下文流水线会：
+
+- 从最新一次已提交的压缩边界开始；
+- 通过有界分页加载剩余消息历史；
+- 恢复 User、Assistant、Tool Call 与 Tool Result 结构；
+- 注入 System Prompt、累计摘要与已经授权的 Meta Message；
+- 在重建期间避免重复加入当前输入；
+- 将历史图片表示为持久化 Attachment 引用；
+- 在调用模型前估算消息、图片、Tool 定义与 Tool 参数占用的 Token。
+
+### 持久化会话记忆
+
+Gewu 持久化继续运行服务端 Agent 会话所需的操作记忆：
+
+- Conversation 元数据与仅追加 Message 日志；
+- 带版本的 Conversation State；
+- Invocation Run 与幂等记录；
+- 用于暂停和恢复流程的 Pending Ask State；
+- 文件读取状态与 Skill 调用状态；
+- 不可变的累计压缩版本。
+
+MySQL 是参考持久化实现。项目提供用于测试和嵌入式开发的内存 Store。Redis 是可选、可丢弃的
+State Cache 与分布式 Run Lease 后端，不是会话事实存储。
+
+在当前版本中，**记忆指持久化会话历史与 Runtime State**。Gewu 尚未提供基于 Embedding 的
+语义记忆、用户画像提取或跨会话召回。
+
+### 两级上下文压缩
+
+1. **Micro Compact** 将较早且执行成功的文件、搜索和命令类 Tool Result 替换为模型投影中的
+   简短占位符，原始的仅追加记录不会被修改。
+2. **Full Compact** 使用宿主授权且不携带 Tool 的模型，将较早的会话前缀替换为累计摘要。
+   压缩记录带版本，保留序列边界与模型元数据，并与相关 Runtime State 变更原子提交。
+
+默认 Full Compact 策略在模型上下文窗口使用率达到 75% 时触发，以 50% 为压缩目标，并将
+90% 视为安全硬限制。Full Compact 需要显式启用：宿主必须同时提供压缩策略和压缩模型或模型
+Provider。
+
+## 授权 Workspace 与所有权
+
+`WorkspaceSession` 向 Agent 提供一个已经完成授权的逻辑文件系统视图。宿主可以把租户、团队、
+共享、用户或应用持有的内容作为不同 Mount 组合起来，并为每个 Mount 分配只读或读写能力。
+最长前缀路由和逻辑路径让模型可见的 Tool Call 不需要了解后端物理存储。
+
+Gewu 不解释租户、省、市、团队或用户等组织层级。宿主先解析继承或向下共享策略，再为当前
+Turn 构造实际可见的 Workspace 与 Catalog。Runtime 记录统一使用
+`subscriber_id + principal_id + principal_type` 确定作用域，持久化操作拒绝跨订阅方访问。
+
+## Runtime 执行流程
 
 ```text
 宿主应用
@@ -46,76 +176,15 @@ Gewu 面向已经拥有后端产品、希望加入 Agent 能力，但不希望�
               |
               |-- 持久化输入与 Run
               |-- 根据摘要和仅追加历史重建上下文
+              |-- 准备 Scene、Skill 与 Tool 上下文
               |-- 执行 Micro Compact 与可选的 Full Compact
-              |-- 执行模型与 Tool 循环
+              |-- 执行流式模型与 Tool 循环
               `-- 持久化 Tool Call、结果、输出与 Runtime State
-```
-
-依赖方向是刻意设计的：订阅方应用可以依赖 Gewu，但 Gewu 不得依赖订阅方的身份、权限、
-组织结构或资源绑定规则。
-
-## 上下文与记忆
-
-### 上下文管理
-
-每个 Turn 中，Gewu 都会根据持久化 Runtime 记录重建模型输入，而不是将内存中的消息列表视为
-事实来源。上下文流水线会：
-
-- 从最新一次已提交的压缩边界开始；
-- 通过有界分页加载剩余消息历史；
-- 恢复 User、Assistant、Tool Call 与 Tool Result 结构；
-- 注入 System Prompt 与累计会话摘要；
-- 在持久化重建期间避免重复加入当前输入；
-- 将历史图片表示为持久化附件引用；
-- 在调用模型前估算消息、图片、Tool 定义与 Tool 参数所占的 Token。
-
-### 持久化会话记忆
-
-Gewu 持久化继续运行服务端 Agent 会话所需的操作记忆：
-
-- Conversation 元数据与仅追加消息日志；
-- 带版本的 Conversation State；
-- Invocation Run 与幂等记录；
-- 用于暂停和恢复流程的 Pending Ask State；
-- 文件读取状态与 Skill 调用状态；
-- 不可变的累计压缩版本。
-
-MySQL 是参考持久化实现。项目提供用于测试和嵌入式开发的内存 Store；Redis 可作为可丢弃的
-State Cache 与分布式 Run Lease 后端。
-
-在当前版本中，**记忆指持久化会话历史与 Runtime State**。Gewu 尚未提供基于 Embedding 的
-语义记忆、向量检索、用户画像提取或跨会话召回。
-
-### 上下文压缩
-
-Gewu 提供两种互补的压缩方式：
-
-1. **Micro Compact** 将较早且执行成功的文件、搜索和命令类 Tool Result 替换为模型投影中的
-   简短占位符，原始的仅追加记录不会被修改。
-2. **Full Compact** 使用宿主授权且不携带 Tool 的模型，将较早的会话前缀替换为累计摘要。
-   压缩记录带版本，保留序列边界与模型元数据，并与相关 Runtime State 变更原子提交。
-
-默认 Full Compact 策略在模型上下文窗口使用率达到 75% 时触发，以 50% 为压缩目标，并将
-90% 视为安全硬限制。Full Compact 需要显式启用：宿主必须同时提供压缩策略和压缩模型或模型
-Provider。
-
-```python
-from gewu_agent_runtime import TurnBindings
-from gewu_agent_runtime.compaction import CompactionPolicy
-
-bindings = TurnBindings(
-    model=authorized_model,
-    workspace=authorized_workspace,
-    tool_set=authorized_tool_set,
-    compaction_policy=CompactionPolicy(),
-    compaction_model=authorized_compaction_model,
-)
 ```
 
 ## 内置 Tool
 
-Gewu 提供以下可选、业务中立的参考 Tool。任何 Tool 都不会被全局注册或默认启用；宿主为每个
-Turn 选择已经授权的 `ToolSet`。
+任何 Tool 都不会被全局注册或默认启用；宿主需要为每个 Turn 显式选择已经授权的 `ToolSet`。
 
 | 分类 | Tool | 用途 | 所需宿主能力 |
 | --- | --- | --- | --- |
@@ -127,12 +196,13 @@ Turn 选择已经授权的 `ToolSet`。
 | 文件系统 | `list` | 列出逻辑目录中的条目 | 可读 Workspace Mount |
 | 文件系统 | `glob` | 按路径模式查找文件 | 可读 Workspace Mount |
 | 文件系统 | `grep` | 使用安全正则表达式搜索可读文本 | 可读 Workspace Mount |
-| 命令执行 | `bash` | 执行已批准的非交互式本地命令 | 宿主提供的 Bash Executor |
+| 命令执行 | `bash` | 执行已经批准的非交互式本地命令 | 宿主提供的 Bash Executor |
 | 用户交互 | `ask_user` | 提出结构化问题，并可暂停 Run | 宿主回调或 Runtime Suspension Binding |
-| Skill | `skill` | 将已授权 Skill 加载到会话 | 宿主提供的 Skill Catalog |
+| Skill | `skill` | 将已经授权的 Skill 加载到会话 | 宿主提供的 Skill Catalog |
 
-文件系统 Tool 只能通过已授权的逻辑 `WorkspaceSession` 工作。`bash` 本身不会创建 Shell，
-`skill` 也无法加载当前 Turn 所提供 Catalog 之外的内容。
+文件系统 Tool 只能通过已经授权的 `WorkspaceSession` 工作。`bash` 本身不会创建 Shell，它只是
+一份 Tool 契约，必须绑定宿主提供的 Executor；知识应用完全可以不启用它。`skill` Tool 也无法
+加载当前 Turn 所提供 Catalog 之外的内容。
 
 ## 使用 Tool 扩展 Gewu
 
@@ -155,7 +225,6 @@ async def lookup_order(order_id: str) -> ToolResult:
         order_id: 稳定的订单标识。
     """
 
-    # `order_service` 是应用持有并已经完成授权的依赖。
     order = await order_service.get_order(order_id)
     return ToolResult(output={"order": order})
 
@@ -177,10 +246,10 @@ Gewu 目前不会连接 MCP Server、发现远程 Tool，也不会通过 stdio �
 Tool Call。
 
 在 MCP Client Adapter 可用之前，外部服务需要通过 Python 原生 Tool 暴露，并注入
-`TurnBindings.tool_set`。MCP 是自然的未来适配边界：远程 Tool 定义可以被转换成 Gewu
-`Tool`，然后进入相同的逐 Turn 授权和执行流水线。
+`TurnBindings.tool_set`。MCP 是未来接入第三方 Tool 的标准适配边界，但它仍会遵循相同的宿主
+授权和逐 Turn ToolSet 模型。
 
-## 架构
+## 架构与包结构
 
 ```text
 HTTP / RPC / Worker
@@ -201,8 +270,6 @@ AgentRuntime
   `-- StateCache                   可丢弃的 Conversation State Cache
 ```
 
-## 包结构
-
 | 工程 | Python 包 | 职责 |
 | --- | --- | --- |
 | [`packages/agent-runtime`](packages/agent-runtime) | `gewu-agent-runtime` | Agent 执行、上下文、记忆、压缩、Tool、Workspace、Skill、Scene、持久化契约与适配器 |
@@ -218,7 +285,7 @@ cd gewu
 uv sync --all-packages --all-extras
 ```
 
-## 最小进程内示例
+### 最小进程内示例
 
 以下示例使用 Scripted Model，因此结果确定且不需要外部 API Key：
 
@@ -281,15 +348,19 @@ asyncio.run(main())
 Binding。所有权和集成契约请参阅
 [`gewu-agent-runtime` 包指南](packages/agent-runtime/README.md)。
 
-## Runtime 边界
+## 有意保留的边界
 
 Gewu 有意不负责：
 
+- 提供面向最终用户的 Web 或管理后台产品；
 - 处理入站 HTTP 或选择传输协议；
-- 认证调用者或推导业务权限；
+- 认证调用者或推导组织与业务权限；
+- 管理 Wiki 编辑、文档导入或业务 Schema；
 - 根据不可信请求字段选择租户资源；
 - 根据 Workspace 路径推断组织层级；
-- 将 Prompt 或 Tool Description 当作授权边界。
+- 提供内置向量检索或语义长期记忆；
+- 在当前版本连接 MCP Server；
+- 将 Prompt、Meta Message 或 Tool Description 当作授权边界。
 
 宿主必须在构造 `PreparedAgentTurn` 或 `TurnBindings` 前解决这些策略。
 

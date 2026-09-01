@@ -2,71 +2,136 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-**Gewu (格物) is a provider-neutral, embeddable Python runtime for building stateful
-server-side AI agents.**
+**Gewu (格物) is a provider-neutral, embeddable Python runtime for building governed,
+stateful, server-side AI agents.**
 
-Gewu owns the model and tool execution loop, context construction, durable conversation memory,
-context compaction, logical workspaces, skills, scenes, and run coordination. The host application
-keeps control of identity, authorization, model selection, data access, and transport.
+Gewu turns an authorized model, ToolSet, logical Workspace, Skill and Scene catalog, and
+persistence backend into a durable Agent conversation. It owns the model and Tool loop, context
+construction, conversation memory, context compaction, suspend-and-resume interaction, and Run
+coordination. The host application keeps control of identity, authorization, organization policy,
+model access, business data, and transport.
+
+Gewu is especially suited to self-hosted organizational knowledge Agents. A host can expose a
+curated Wiki as a logical Workspace, use Scenes to define knowledge scopes, use Skills to supply
+repeatable working methods, and inject authorized Tools for live facts. The Agent can then inspect
+the relevant knowledge and obtain current data without moving business rules or credentials into
+the Runtime.
+
+The broader project goal is to make capable, controllable knowledge Agents practical for
+enterprises without requiring a general-purpose desktop Agent or a vector database by default.
 
 > **Project status:** Alpha. Gewu is under active development and its public API may change before
 > the first stable release.
 
-## Why Gewu
+## Where Gewu Fits
 
-Gewu is designed for teams that already have a backend product and want to add Agent capabilities
-without moving business policy into an Agent framework.
-
-- **Host-controlled capabilities:** Every turn receives an already-authorized model, tool set,
-  workspace, prompt, and optional Skill or Scene catalog.
-- **Durable conversation memory:** Conversations, append-only messages, versioned runtime state,
-  runs, suspended Ask flows, and cumulative compactions survive beyond one model call.
-- **Managed model context:** Gewu reconstructs provider-neutral model messages, preserves Tool call
-  structure, accounts for Tool schemas and images, and protects the model context window.
-- **Two-stage compaction:** Low-value historical Tool results can be removed from the model
-  projection before older conversation prefixes are replaced by cumulative summaries.
-- **Logical Workspace VFS:** Authorized mounts expose logical paths without leaking physical
-  storage or business organization structure into the Runtime.
-- **Provider-neutral execution:** The core loop depends on model protocols, with optional adapters
-  for OpenAI-compatible APIs, Anthropic, and China Unicom Open Service.
-- **Production-oriented coordination:** MySQL is the reference fact store. Redis provides
-  disposable state caching and distributed run leases.
-- **Explicit ownership boundaries:** Runtime data is scoped by
-  `subscriber_id + principal_id + principal_type`.
-
-## Core Runtime Flow
+Gewu is the Runtime layer, not a complete knowledge-base product or SaaS application.
 
 ```text
+Web / Admin / API / Messaging channels
+                  |
+                  v
 Host application
-  |-- authenticates the caller
-  |-- authorizes the model, tools, workspace, Skills, and Scenes
-  `-- creates TurnBindings
-              |
-              v
-        AgentRuntime
-              |
-              |-- persists the input and Run
-              |-- rebuilds context from summary + append-only history
-              |-- applies Micro Compact and optional Full Compact
-              |-- executes the model/Tool loop
-              `-- persists Tool calls, results, output, and runtime state
+  |-- authenticates users and resolves organization policy
+  |-- authorizes models, Scenes, Skills, Tools, and Workspace mounts
+  |-- manages Wiki content and live business-data services
+  `-- prepares one Agent turn
+                  |
+                  v
+Gewu Agent Runtime
+  |-- executes the model and Tool loop
+  |-- constructs and compacts model context
+  |-- persists conversations, messages, Runs, and Runtime state
+  |-- projects Scenes and Skills into the conversation
+  `-- coordinates concurrent and suspended execution
+                  |
+       +----------+-----------+
+       |          |           |
+       v          v           v
+     Models   Workspace    Authorized Tools
+                            (live facts/actions)
 ```
 
-The dependency direction is intentional: subscriber applications may depend on Gewu, while Gewu
-must never depend on subscriber identity, permission, organization, or resource-binding rules.
+This boundary is intentional. Subscriber applications may depend on Gewu, while Gewu must never
+depend on subscriber identity systems, business permissions, organization hierarchies, Wiki
+schemas, or data APIs.
 
-## Context and Memory
+## Core Capabilities
 
-### Context management
+| Capability | What Gewu provides |
+| --- | --- |
+| Agent execution | A streaming, provider-neutral model and Tool loop with structured lifecycle events, bounded iterations, and explicit completion, suspension, and failure states |
+| Durable conversations | Append-only messages, versioned conversation state, invocation Runs, idempotency records, attachments, pending Ask state, and immutable compaction generations |
+| Context management | Persistent context reconstruction, Tool-call preservation, multimodal accounting, token estimation, and safe context-window limits |
+| Context compaction | Micro Compact for low-value historical Tool results and model-generated Full Compact for cumulative conversation summaries |
+| Logical Workspace VFS | Capability-scoped logical mounts that hide physical storage and can combine multiple host-authorized knowledge sources in one Agent view |
+| Scenes | An authorized knowledge scope with a logical root, description, and an optional required Skill workflow |
+| Skills | Reusable instructions loaded into the conversation only when authorized and needed |
+| Tools | Eleven optional business-neutral Tools for files, search, controlled execution, user clarification, and Skill loading, plus native Python Tool extension |
+| Human interaction | Structured clarification through `ask_user`, including persistent suspension and exact Run resumption |
+| Ownership and coordination | Consistent `subscriber_id + principal_id + principal_type` ownership, MySQL persistence, Redis state caching, and distributed Run leases |
+| Model integration | Protocol-based execution with optional adapters for OpenAI-compatible APIs, Anthropic, and China Unicom Open Service |
 
-For each turn, Gewu rebuilds model input from durable Runtime records rather than treating an
+## Knowledge, Workflows, and Live Facts
+
+Gewu deliberately separates three different kinds of context:
+
+```text
+Scene       where the Agent should work
+Skill       how the Agent should approach the work
+Workspace   the knowledge and evidence the Agent may inspect
+Tool        the live facts or actions the host permits
+```
+
+### Scenes as knowledge scopes
+
+A Scene points to an authorized logical path in the current Workspace. When the host selects a
+Scene, Gewu adds a Meta Message describing the Scene name, root path, description, and bound
+workflow. Gewu does not copy the entire Scene into the model context. The Agent is instructed to
+discover the relevant entry points and read only the evidence needed for the current question.
+
+If a Scene requires a Skill, the Runtime tells the Agent to load it before handling the Scene.
+This allows an application to pair a body of knowledge with a repeatable method without baking
+that method into a global system prompt.
+
+### Skills as reusable working methods
+
+Skills contain task-specific instructions and are resolved from a catalog already filtered by
+the host. Gewu lists only authorized Skills, loads full Skill content on demand through the
+`skill` Tool, records invocation state, and keeps Skill content aligned with the active model
+context.
+
+### Wiki knowledge without a mandatory vector index
+
+For curated Wiki or Markdown knowledge, the host can mount the content into the Workspace and let
+the Agent navigate it with `list`, `glob`, `grep`, and `read`. This preserves directory, document,
+and section structure and makes edits immediately visible without a mandatory chunking,
+embedding, or re-indexing pipeline.
+
+Gewu is not a built-in RAG engine and does not claim that file navigation replaces semantic
+retrieval for every corpus. A host may inject full-text search, vector retrieval, reranking, or
+any hybrid retrieval strategy as an authorized Tool when the knowledge scale or format requires
+it.
+
+### Live business facts stay outside the Runtime
+
+Operational facts such as orders, inventory, customers, metrics, or tickets belong to the host
+application. The host exposes them through narrow, authorized Tools rather than teaching Gewu a
+business schema or giving the model unrestricted database access. This keeps business data
+access, credentials, row-level policy, and audit rules in the system that owns them.
+
+## Durable Context and Memory
+
+### Persistent context reconstruction
+
+For every turn, Gewu rebuilds model input from durable Runtime records rather than treating an
 in-memory message list as the source of truth. The context pipeline:
 
 - starts from the latest committed compaction boundary;
-- loads the remaining message history in bounded pages;
+- loads the remaining history in bounded pages;
 - restores user, assistant, Tool call, and Tool result structure;
-- injects the system prompt and cumulative conversation summary;
-- avoids duplicating the current input during persistent reconstruction;
+- injects the system prompt, cumulative summary, and authorized Meta Messages;
+- avoids duplicating the current input during reconstruction;
 - represents historical images as durable attachment references; and
 - estimates messages, images, Tool definitions, and Tool arguments before the model call.
 
@@ -81,45 +146,62 @@ Gewu persists the operational memory required to continue a server-side Agent co
 - file-read and Skill invocation state; and
 - immutable cumulative compaction generations.
 
-MySQL is the reference durable implementation. An in-memory store is included for tests and
-embedded development, while Redis can be used as a disposable state cache and distributed Run
-lease backend.
+MySQL is the reference durable implementation. An in-memory Store is included for tests and
+embedded development. Redis is an optional, disposable state cache and distributed Run lease
+backend; it is not the conversation fact store.
 
 In the current release, **memory means durable conversation history and Runtime state**. Gewu does
-not yet provide embedding-based semantic memory, vector retrieval, user-profile extraction, or
-cross-conversation recall.
+not yet provide embedding-based semantic memory, user-profile extraction, or cross-conversation
+recall.
 
-### Context compaction
-
-Gewu applies two complementary forms of compaction:
+### Two-stage context compaction
 
 1. **Micro Compact** replaces older successful file, search, and command Tool results with compact
-   placeholders in the model projection. The original append-only records remain unchanged.
+   placeholders in the model projection. Original append-only records remain unchanged.
 2. **Full Compact** uses a host-authorized, no-Tool model to replace an older conversation prefix
    with a cumulative summary. Compactions are versioned, retain their sequence boundary and model
    metadata, and are committed atomically with related Runtime state transitions.
 
 The default Full Compact policy triggers at 75% of the model context window, targets 50%, and
-treats 90% as the safe hard limit. Full Compact is opt-in: the host must supply both a policy and a
-compaction model or model provider.
+treats 90% as the safe hard limit. Full Compact is opt-in: the host must provide both a policy and
+a compaction model or model provider.
 
-```python
-from gewu_agent_runtime import TurnBindings
-from gewu_agent_runtime.compaction import CompactionPolicy
+## Authorized Workspaces and Ownership
 
-bindings = TurnBindings(
-    model=authorized_model,
-    workspace=authorized_workspace,
-    tool_set=authorized_tool_set,
-    compaction_policy=CompactionPolicy(),
-    compaction_model=authorized_compaction_model,
-)
+`WorkspaceSession` presents one already-authorized logical filesystem view to the Agent. A host
+can combine tenant, team, shared, user, or application-owned content as separate mounts and assign
+read-only or read-write capability to each mount. Longest-prefix routing and logical paths keep
+backend storage details out of model-visible Tool calls.
+
+Gewu does not interpret a tenant, province, city, team, or user hierarchy. The host resolves any
+inheritance or downward-sharing policy first, then constructs the Workspace and catalogs visible
+for the current turn. Runtime records are scoped consistently by
+`subscriber_id + principal_id + principal_type`, and persistence operations reject cross-subscriber
+access.
+
+## Runtime Flow
+
+```text
+Host application
+  |-- authenticates the caller
+  |-- authorizes the model, Tools, Workspace, Skills, and Scene
+  `-- creates TurnBindings
+              |
+              v
+        AgentRuntime
+              |
+              |-- persists the input and Run
+              |-- rebuilds context from summary + append-only history
+              |-- prepares Scene, Skill, and Tool context
+              |-- applies Micro Compact and optional Full Compact
+              |-- executes the streaming model and Tool loop
+              `-- persists Tool calls, results, output, and Runtime state
 ```
 
 ## Built-in Tools
 
-Gewu includes the following optional, business-neutral reference Tools. No Tool is globally
-registered or enabled by default; the host selects an authorized `ToolSet` for each turn.
+No Tool is globally registered or enabled by default. The host explicitly selects an authorized
+`ToolSet` for each turn.
 
 | Category | Tool | Purpose | Required host capability |
 | --- | --- | --- | --- |
@@ -135,9 +217,10 @@ registered or enabled by default; the host selects an authorized `ToolSet` for e
 | Interaction | `ask_user` | Ask structured questions and optionally suspend the Run | Host callback or Runtime suspension binding |
 | Skills | `skill` | Load an authorized Skill into the conversation | Host-provided Skill catalog |
 
-Filesystem Tools operate only through the authorized logical `WorkspaceSession`. `bash` does not
-create a shell by itself, and `skill` cannot load entries outside the catalog supplied for the
-current turn.
+Filesystem Tools operate only through the authorized `WorkspaceSession`. `bash` does not create a
+shell by itself: it is only a Tool contract and requires a host-provided executor. A knowledge
+application can omit it entirely. The `skill` Tool cannot load entries outside the catalog
+supplied for the current turn.
 
 ## Extending Gewu with Tools
 
@@ -160,7 +243,6 @@ async def lookup_order(order_id: str) -> ToolResult:
         order_id: Stable order identifier.
     """
 
-    # `order_service` is an application-owned, already-authorized dependency.
     order = await order_service.get_order(order_id)
     return ToolResult(output={"order": order})
 
@@ -183,11 +265,11 @@ in the current release**. Gewu does not yet connect to MCP servers, discover rem
 Tool calls over stdio or Streamable HTTP.
 
 Until an MCP client adapter is available, external services must be exposed through native Python
-Tools and injected into `TurnBindings.tool_set`. MCP support is a natural future adapter boundary:
-remote Tool definitions can be converted into Gewu `Tool` values and then pass through the same
-per-turn authorization and execution pipeline.
+Tools and injected into `TurnBindings.tool_set`. MCP is the intended standard adapter boundary for
+future third-party Tool integration; it will still pass through the same host authorization and
+per-turn ToolSet model.
 
-## Architecture
+## Architecture and Packages
 
 ```text
 HTTP / RPC / Worker
@@ -208,8 +290,6 @@ AgentRuntime
   `-- StateCache                   disposable conversation-state cache
 ```
 
-## Packages
-
 | Project | Python package | Responsibility |
 | --- | --- | --- |
 | [`packages/agent-runtime`](packages/agent-runtime) | `gewu-agent-runtime` | Agent execution, context, memory, compaction, Tools, Workspaces, Skills, Scenes, persistence contracts, and adapters |
@@ -225,7 +305,7 @@ cd gewu
 uv sync --all-packages --all-extras
 ```
 
-## Minimal In-Process Example
+### Minimal in-process example
 
 The scripted model makes this example deterministic and requires no external API key:
 
@@ -289,15 +369,19 @@ model, Workspace, Tool, MySQL, and Redis bindings. See the
 [`gewu-agent-runtime` package guide](packages/agent-runtime/README.md) for the ownership and
 integration contracts.
 
-## Runtime Boundary
+## Intentional Boundaries
 
 Gewu intentionally does not:
 
+- provide an end-user Web or administration product;
 - handle inbound HTTP or choose a transport protocol;
-- authenticate callers or derive business permissions;
+- authenticate callers or derive organization and business permissions;
+- manage Wiki authoring, document ingestion, or business schemas;
 - select tenant resources from untrusted request fields;
-- infer organization hierarchy from Workspace paths; or
-- treat prompts or Tool descriptions as an authorization boundary.
+- infer organization hierarchy from Workspace paths;
+- provide built-in vector retrieval or semantic long-term memory;
+- connect to MCP servers in the current release; or
+- treat prompts, Meta Messages, or Tool descriptions as authorization boundaries.
 
 The host must resolve those policies before constructing `PreparedAgentTurn` or `TurnBindings`.
 
