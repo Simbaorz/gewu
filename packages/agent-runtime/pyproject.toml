@@ -53,10 +53,10 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://gitee.com/simbaorz/gewu"
-Documentation = "https://gitee.com/simbaorz/gewu/tree/test/docs"
-Repository = "https://gitee.com/simbaorz/gewu.git"
-Issues = "https://gitee.com/simbaorz/gewu/issues"
+Homepage = "https://github.com/Simbaorz/gewu"
+Documentation = "https://github.com/Simbaorz/gewu/tree/main/packages/agent-runtime"
+Repository = "https://github.com/Simbaorz/gewu.git"
+Issues = "https://github.com/Simbaorz/gewu/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gewu_agent_runtime"]
