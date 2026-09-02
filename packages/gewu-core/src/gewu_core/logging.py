@@ -302,9 +302,6 @@ def _sanitize_log_value(value: object) -> object:
 def _sanitize_log_record(record: logging.LogRecord) -> logging.LogRecord:
     record.msg = _sanitize_log_value(record.msg)
     record.args = _sanitize_log_arguments(record.args)
-    record.exc_info = None
-    record.exc_text = None
-    record.stack_info = None
     return record
 
 

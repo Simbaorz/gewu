@@ -33,14 +33,14 @@ class _BlockingHandler(logging.Handler):
     def __init__(self) -> None:
         super().__init__()
         self.started = threading.Event()
-        self.release = threading.Event()
+        self.unblock = threading.Event()
         self.thread_ids: list[int] = []
         self.messages: list[str] = []
 
     def emit(self, record: logging.LogRecord) -> None:
         self.thread_ids.append(threading.get_ident())
         self.started.set()
-        self.release.wait(timeout=5)
+        self.unblock.wait(timeout=5)
         self.messages.append(self.format(record))
 
 
@@ -82,7 +82,7 @@ async def test_slow_sink_never_runs_on_event_loop_thread(
     assert sink.started.wait(timeout=1)
     assert sink.thread_ids[0] != event_loop_thread
     await asyncio.sleep(0)
-    sink.release.set()
+    sink.unblock.set()
     shutdown_logging()
     assert sink.messages == ["message value"]
 
@@ -108,7 +108,7 @@ def test_full_queue_drops_without_blocking_request_thread(
     assert stats.queued == 1
     assert stats.dropped_total == 1
     assert stats.dropped_pending_notice == 1
-    sink.release.set()
+    sink.unblock.set()
     shutdown_logging()
 
 
@@ -132,17 +132,17 @@ def test_shutdown_restores_handlers_and_stops_listener(
     assert logging_queue_stats().listener_alive is False
 
 
-def test_queue_boundary_removes_third_party_exception_details(
+def test_queue_boundary_preserves_third_party_exception_details(
     isolated_root_logger: logging.Logger,
 ) -> None:
     sink = _BlockingHandler()
-    sink.release.set()
+    sink.unblock.set()
     isolated_root_logger.addHandler(sink)
     configure_logging(LoggingSettings(queue_capacity=8))
     logger = logging.getLogger("third.party")
 
     try:
-        raise RuntimeError("external-adapter-private-secret")
+        raise RuntimeError("external adapter failed")
     except RuntimeError as exc:
         logger.error(
             "Third-party request failed error=%s",
@@ -154,12 +154,13 @@ def test_queue_boundary_removes_third_party_exception_details(
     assert sink.started.wait(timeout=1)
     shutdown_logging()
     rendered = "\n".join(sink.messages)
-    assert rendered == "Third-party request failed error=<RuntimeError>"
-    assert "external-adapter-private-secret" not in rendered
-    assert "Traceback" not in rendered
+    assert rendered.startswith("Third-party request failed error=<RuntimeError>")
+    assert "Traceback" in rendered
+    assert "RuntimeError: external adapter failed" in rendered
+    assert "Stack (most recent call last)" in rendered
 
 
-def test_bootstrap_record_factory_protects_late_third_party_handlers(
+def test_bootstrap_record_factory_preserves_late_third_party_tracebacks(
     isolated_root_logger: logging.Logger,
 ) -> None:
     init_logging()
@@ -171,12 +172,14 @@ def test_bootstrap_record_factory_protects_late_third_party_handlers(
     logger.propagate = False
     try:
         try:
-            raise OSError("bootstrap-private-secret")
+            raise OSError("bootstrap failed")
         except OSError as exc:
             logger.error("Startup failed: %s", exc, exc_info=True)
 
-        assert sink.messages == ["Startup failed: <OSError>"]
-        assert "bootstrap-private-secret" not in sink.messages[0]
+        assert len(sink.messages) == 1
+        assert sink.messages[0].startswith("Startup failed: <OSError>")
+        assert "Traceback" in sink.messages[0]
+        assert "OSError: bootstrap failed" in sink.messages[0]
     finally:
         logger.handlers[:] = old_handlers
         logger.propagate = old_propagate
