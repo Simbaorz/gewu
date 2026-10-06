@@ -10,6 +10,7 @@ from gewu_agent_runtime.prompts import (
     WorkspacePromptContext,
     build_environment_section,
     build_system_prompt,
+    get_dynamic_prompt,
     get_static_prompt,
 )
 
@@ -96,3 +97,46 @@ def test_environment_section_uses_explicit_timezone() -> None:
 
     assert "2026-05-29 12:52:00 Asia/Shanghai (UTC+08:00)" in section
     assert "2026-05-29T04:52:00Z" in section
+
+
+def test_empty_dynamic_context_does_not_emit_sections_or_empty_entries() -> None:
+    profile = PromptProfile(sections=("", " \n "))
+    workspace = WorkspacePromptContext()
+    extras = {"empty": " \n "}
+
+    assert (
+        get_dynamic_prompt(profile=profile, workspace=workspace, extra_dynamic_sections=extras)
+        == ""
+    )
+    prompt = build_system_prompt(
+        profile=profile, workspace=workspace, extra_dynamic_sections=extras
+    )
+    assert prompt.dynamic_sections == (DYNAMIC_BOUNDARY,)
+    for title in (
+        "# Workspace",
+        "# Memory",
+        "# Default Scene",
+        "# Environment",
+        "# Available Scenes",
+    ):
+        assert title not in prompt.full
+
+
+def test_stable_dynamic_context_precedes_memory_and_has_no_clock() -> None:
+    workspace = WorkspacePromptContext(readable_roots=("/wiki",), relative_path_root="/wiki")
+    profile = PromptProfile(sections=("# Memory\n\nRemember this preference.",))
+    extras = ("# Default Scene\n\nEntry path: /wiki/policies",)
+    prompt = build_system_prompt(
+        workspace=workspace, profile=profile, extra_dynamic_sections=extras
+    )
+
+    assert prompt.full.index("# Workspace") < prompt.full.index("# Default Scene")
+    assert prompt.full.index("# Default Scene") < prompt.full.index("# Memory")
+    assert "Writable:\n- None" in prompt.full
+    assert "# Environment" not in prompt.full
+    assert get_dynamic_prompt(
+        workspace=workspace, profile=profile, extra_dynamic_sections=extras
+    ) == "\n\n---\n\n".join(prompt.dynamic_sections[1:])
+    assert prompt == build_system_prompt(
+        workspace=workspace, profile=profile, extra_dynamic_sections=extras
+    )

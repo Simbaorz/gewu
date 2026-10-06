@@ -326,6 +326,11 @@ async def test_runtime_uses_host_scene_path_and_bound_skill_state(
     )
     assert "tenant" not in scene.content
     assert messages[0].payload.get("llm_ignore") is None
+    system_message = model.requests[0][0][0]
+    assert system_message.role.value == "system"
+    assert "## Scenes" in system_message.content
+    assert "load that Skill" in system_message.content
+    assert "Do not discover or switch Scenes autonomously" in system_message.content
 
 
 async def test_scene_reminder_detects_already_invoked_bound_skill(

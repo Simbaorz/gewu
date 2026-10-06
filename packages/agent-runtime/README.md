@@ -85,12 +85,16 @@ For schema-managed deployments, import `AgentRuntimeBase.metadata` into migratio
 
 `build_system_prompt(static_sections=...)` replaces the Runtime's default static sections with
 subscriber-provided rules. Omitting the argument preserves the default prompt; an empty sequence
-removes its static sections. Workspace, memory, and extra dynamic sections keep their existing
-assembly order and static/dynamic boundary.
+removes its static sections. After the static/dynamic boundary, actual Workspace context comes
+first, followed by extra dynamic sections and then supplied memory. Empty sections are omitted,
+including an empty Workspace context. Current timestamps are not automatically injected.
 
 A selected Scene reminder contains its name, logical entry path, and visible bound Skill name
-when available. It does not include the Scene description or workflow instructions. The host's
-system prompt should define when to apply a Scene, load its bound Skill, and inspect its files.
+when available. It does not include the Scene description or workflow instructions. The default
+system prompt defines how to apply the selected Scene, load its bound Skill, and inspect its
+files. Hosts replacing the static prompt own these rules. Scenes are selected explicitly by
+the user; the Runtime does not list all Scenes for autonomous model selection. A default Scene
+is used only when supplied by the host, without overriding the user's explicit selection.
 
 Model invocation failures emit `MODEL_CALL_FAILED` diagnostics only at DEBUG level. They include
 run, conversation, and request identifiers, the error code, underlying HTTP status when available,

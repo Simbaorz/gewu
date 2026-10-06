@@ -136,8 +136,11 @@ Gewu 只执行最终得到的 Workspace 能力。
 
 Scene 包含名称、描述和 Workspace 根路径，也可以绑定一个必需的 Skill。用户选择 Scene 后，
 Gewu 会通过 Meta Message 把名称、入口路径和可见的绑定 Skill 名称加入当前上下文，
-其中不包含 Scene 描述或工作流指令。宿主的 System Prompt 负责定义 Scene 和绑定 Skill 的使用规则。
+其中不包含 Scene 描述或工作流指令。默认 System Prompt 指导 Agent 加载绑定 Skill，
+或阅读选中 Wiki 的相关文件；替换默认提示词的宿主负责提供自己的规则。
 Gewu 不会把整个知识目录一次性塞给模型；Agent 使用文件 Tool 按需发现和阅读证据。
+
+Scene 的选择由用户或宿主负责。Agent 不自主发现或切换 Scene，而是在选中的知识空间内使用工具导航。
 
 Skill 来自宿主已经过滤过的 Catalog。Gewu 只列出当前用户有权使用的 Skill，并在模型实际调用
 `skill` Tool 时加载完整内容。

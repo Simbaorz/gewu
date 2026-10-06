@@ -155,9 +155,13 @@ These objects answer different questions:
 A Scene has a name, description, and Workspace root path, and may require a Skill. When a user
 selects a Scene, Gewu adds its name, entry path, and visible bound Skill name to the current
 context as a Meta Message. Scene descriptions and workflow instructions are not included in this
-reminder. The host's system prompt defines how to use Scenes and their bound Skills. Gewu does
+reminder. The default system prompt guides the Agent to load a bound Skill or inspect the
+selected Wiki's files. A host replacing that prompt supplies its own rules. Gewu does
 not put the entire knowledge directory into the prompt; the Agent discovers and reads evidence
 on demand through file Tools.
+
+Scene selection belongs to the user or host. The Agent does not autonomously discover or switch
+Scenes; it navigates the selected knowledge space using the available tools.
 
 Skills come from a catalog that the host has already filtered. Gewu lists only authorized Skills
 and loads full instructions only when the model invokes the `skill` Tool.
