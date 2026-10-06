@@ -18,7 +18,6 @@ from gewu_agent_runtime.tools import Tool, ToolContext, ToolResult, ToolSet, too
 SENT_SKILL_NAMES_KEY = "sent_skill_names"
 INVOKED_SKILLS_KEY = "invoked_skills"
 SKILL_INVOCATION_ARGS_MAX_BYTES = 4 * 1024
-SCENE_REMINDER_DESCRIPTION_MAX_CHARS = 240
 MAX_LISTING_DESC_CHARS = 250
 SKILL_LISTING_LEAD = "The following skills are available for use with the skill tool:"
 
@@ -296,7 +295,6 @@ async def prepare_skill_turn(
         invocation_target=invocation_target,
         scene_catalog=scene_catalog,
         registry=registry,
-        state=state,
     )
     if scene_message is not None:
         messages.append(scene_message)
@@ -695,7 +693,6 @@ async def _selected_scene_message(
     invocation_target: InvocationTarget | None,
     scene_catalog: SceneCatalog | None,
     registry: SkillRegistry | None,
-    state: Mapping[str, Any],
 ) -> dict[str, Any] | None:
     if scene_catalog is None:
         return None
@@ -704,7 +701,7 @@ async def _selected_scene_message(
     scene = await scene_catalog.get_scene(invocation_target.resource_id)
     if scene is None:
         return None
-    content = _scene_reminder_content(scene, registry, state)
+    content = _scene_reminder_content(scene, registry)
     return {
         "role": "user",
         "content": content,
@@ -717,47 +714,20 @@ async def _selected_scene_message(
 def _scene_reminder_content(
     scene: SceneDocument,
     registry: SkillRegistry | None,
-    state: Mapping[str, Any],
 ) -> str:
     scene_path = scene.workspace_path.rstrip("/") or "/"
     lines = [
-        "The user selected this Scene in the current workspace as the business analysis context for the current turn.",
-        f"Scene name: {scene.name}.",
-        f"Scene root path: {scene_path}.",
+        "User-selected Scene:",
+        f"- Scene name: {scene.name}",
+        f"- Scene entry path: {scene_path}",
     ]
-    description = _truncate_text(
-        " ".join(scene.description.split()),
-        SCENE_REMINDER_DESCRIPTION_MAX_CHARS,
-    )
-    if description:
-        lines.append(_sentence_line("Scene description", description))
     skill_name = (
         registry.skill_name_for_asset_key(scene.required_skill_asset_key)
         if registry is not None and scene.required_skill_asset_key
         else ""
     )
     if skill_name:
-        lines.append(
-            f"Bound skill: `{skill_name}`. This skill provides the workflow for this Scene."
-        )
-        invoked = state.get(INVOKED_SKILLS_KEY)
-        if isinstance(invoked, dict) and skill_name in invoked:
-            lines.append(
-                f"Required workflow: `{skill_name}` is already loaded; "
-                "continue following it for this Scene."
-            )
-        else:
-            lines.append(
-                f"Required workflow: invoke the `skill` tool with `{skill_name}` "
-                "before handling this Scene."
-            )
-    else:
-        lines.append("Bound skill: none. No Scene-specific workflow is available.")
-        lines.append(
-            f"Required workflow: use file discovery and reading tools to inspect "
-            f"the Scene root path `{scene_path}` and identify the relevant "
-            "entry points and evidence before handling this Scene."
-        )
+        lines.append(f"- Bound skill: {skill_name}")
     return "<system-reminder>\n" + "\n".join(lines) + "\n</system-reminder>"
 
 
@@ -791,18 +761,3 @@ def _listing_description(skill_document: SkillDocument) -> str:
     if description and when_to_use:
         return f"{description} - {when_to_use}"
     return when_to_use or description
-
-
-def _truncate_text(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text
-    marker = "..."
-    if max_chars <= len(marker):
-        return text[:max_chars]
-    return f"{text[: max_chars - len(marker)].rstrip()}{marker}"
-
-
-def _sentence_line(label: str, value: str) -> str:
-    punctuation = (".", "!", "?", "...", "。", "！", "？")
-    suffix = "" if value.endswith(punctuation) else "."
-    return f"{label}: {value}{suffix}"

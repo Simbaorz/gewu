@@ -76,6 +76,18 @@ def test_assistant_name_and_dynamic_sections_are_subscriber_configurable() -> No
     assert any("# Available Resources" in section for section in prompt.dynamic_sections)
 
 
+def test_subscriber_can_replace_static_sections_without_changing_runtime_default() -> None:
+    prompt = build_system_prompt(
+        static_sections=("You are a specialist.", "# Specialist Rules"),
+        extra_dynamic_sections=("# Current Context",),
+    )
+
+    assert prompt.static_sections == ("You are a specialist.", "# Specialist Rules")
+    assert prompt.full.startswith("You are a specialist.\n\n---\n\n# Specialist Rules")
+    assert "# Doing Tasks" not in prompt.full
+    assert "# Doing Tasks" in get_static_prompt()
+
+
 def test_environment_section_uses_explicit_timezone() -> None:
     section = build_environment_section(
         current_time=datetime(2026, 5, 29, 4, 52, tzinfo=UTC),

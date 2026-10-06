@@ -9,6 +9,7 @@ from datetime import timedelta
 from typing import Literal, cast
 from uuid import UUID
 
+import httpx
 import pytest
 
 from gewu_agent_runtime.builtins import (
@@ -1136,6 +1137,71 @@ async def test_runtime_projects_known_execution_failure(
     assert run.status is AgentRunStatus.FAILED
     assert run.error_code == code
     assert run.error_message == message
+
+
+@pytest.mark.parametrize("log_level", [logging.DEBUG, logging.INFO])
+@pytest.mark.parametrize("failure_kind", ["http", "connect", "read", "timeout"])
+async def test_runtime_logs_model_failure_diagnostics_only_at_debug(
+    principal: PrincipalRef,
+    workspace: WorkspaceSession,
+    caplog: pytest.LogCaptureFixture,
+    failure_kind: str,
+    log_level: int,
+) -> None:
+    request = httpx.Request(
+        "POST", "https://user:password-secret@model.test/chat?token=query-secret"
+    )
+    if failure_kind == "http":
+        cause: BaseException = httpx.HTTPStatusError(
+            "private response-secret",
+            request=request,
+            response=httpx.Response(503, request=request, text="private response-secret"),
+        )
+    else:
+        failure_types = {
+            "connect": httpx.ConnectError,
+            "read": httpx.RemoteProtocolError,
+            "timeout": httpx.ReadTimeout,
+        }
+        cause = failure_types[failure_kind]("private network-secret", request=request)
+    failure = ModelTimeoutError() if failure_kind == "timeout" else ModelUnavailableError()
+    failure.__cause__ = cause
+    store = InMemoryRuntimeStore()
+    with caplog.at_level(log_level, logger="gewu_agent_runtime.runtime.runtime"):
+        session = await AgentRuntime(store=store).start_turn(
+            TurnRequest(
+                invoker=principal, content="private prompt-secret", request_id="diagnostic-request"
+            ),
+            TurnBindings(model=RaisingChatModel(failure), workspace=workspace),
+        )
+        events = await _collect_turn(session)
+
+    assert isinstance(events[0], ExecutionError)
+    expected_code = "model_timeout" if failure_kind == "timeout" else "model_unavailable"
+    assert events[0].code == expected_code
+    records = [record for record in caplog.records if "MODEL_CALL_FAILED" in record.getMessage()]
+    if log_level == logging.INFO:
+        assert records == []
+        return
+    assert len(records) == 1
+    record = records[0]
+    assert record.levelno == logging.DEBUG
+    message = record.getMessage()
+    assert f"run_id={session.run_id}" in message
+    assert f"conversation_id={session.conversation_id}" in message
+    assert "request_id=diagnostic-request" in message
+    assert f"error_code={expected_code}" in message
+    assert f"http_status={503 if failure_kind == 'http' else 'none'}" in message
+    assert type(cause).__name__ in message
+    assert record.exc_info is None
+    for secret in (
+        "password-secret",
+        "query-secret",
+        "response-secret",
+        "network-secret",
+        "prompt-secret",
+    ):
+        assert secret not in caplog.text
 
 
 async def test_runtime_model_snapshot_excludes_provider_credentials(

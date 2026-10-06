@@ -282,21 +282,26 @@ def build_system_prompt(
     profile: PromptProfile | None = None,
     workspace: WorkspacePromptContext | None = None,
     extra_dynamic_sections: Mapping[str, str] | Sequence[str] | None = None,
+    static_sections: Sequence[str] | None = None,
     assistant_name: str | None = None,
     dynamic_boundary: str = DYNAMIC_BOUNDARY,
 ) -> SystemPrompt:
     """Assemble the complete prompt with a stable static/dynamic boundary."""
 
-    static_sections = _static_sections(assistant_name)
+    resolved_static_sections = (
+        tuple(dedent(section) for section in static_sections if section.strip())
+        if static_sections is not None
+        else _static_sections(assistant_name)
+    )
     dynamic_sections = (
         dynamic_boundary.strip(),
         build_workspace_section(workspace),
         build_memory_section(profile),
         *_extra_sections(extra_dynamic_sections),
     )
-    full = "\n\n---\n\n".join(filter(None, (*static_sections, *dynamic_sections)))
+    full = "\n\n---\n\n".join(filter(None, (*resolved_static_sections, *dynamic_sections)))
     return SystemPrompt(
-        static_sections=static_sections,
+        static_sections=resolved_static_sections,
         dynamic_sections=dynamic_sections,
         full=full,
     )

@@ -153,9 +153,11 @@ These objects answer different questions:
 | Skill | How should the Agent perform this kind of work? | Check policy first, obtain current facts, then provide a conclusion with evidence |
 
 A Scene has a name, description, and Workspace root path, and may require a Skill. When a user
-selects a Scene, Gewu adds its information to the current context as a Meta Message. It does not
-put the entire knowledge directory into the prompt. The Agent discovers and reads evidence on
-demand through file Tools.
+selects a Scene, Gewu adds its name, entry path, and visible bound Skill name to the current
+context as a Meta Message. Scene descriptions and workflow instructions are not included in this
+reminder. The host's system prompt defines how to use Scenes and their bound Skills. Gewu does
+not put the entire knowledge directory into the prompt; the Agent discovers and reads evidence
+on demand through file Tools.
 
 Skills come from a catalog that the host has already filtered. Gewu lists only authorized Skills
 and loads full instructions only when the model invokes the `skill` Tool.

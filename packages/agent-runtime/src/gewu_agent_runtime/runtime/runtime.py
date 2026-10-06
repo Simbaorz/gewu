@@ -68,6 +68,7 @@ from gewu_agent_runtime.llm import (
     Message,
     MessageRole,
     ModelAuthenticationError,
+    ModelInvocationError,
     ModelPermissionDeniedError,
     ModelRateLimitError,
     ModelRequestRejectedError,
@@ -1203,6 +1204,17 @@ class AgentRuntime:
             MessageWriteConflictError,
         ) as exc:
             error = _known_execution_error(exc)
+            if isinstance(exc, ModelInvocationError) and logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "MODEL_CALL_FAILED run_id=%s conversation_id=%s request_id=%s "
+                    "error_code=%s http_status=%s exception_chain=%s",
+                    run.run_id,
+                    run.conversation_id,
+                    run.request_id,
+                    error.code,
+                    _model_failure_http_status(exc),
+                    _safe_exception_chain(exc),
+                )
             with suppress(ConcurrentWriteError):
                 await self._persist_event(
                     run,
@@ -1821,6 +1833,25 @@ def _known_execution_error(error: BaseException) -> ExecutionError:
     else:  # pragma: no cover - guarded by the caller's exception tuple
         raise TypeError(f"Unsupported known execution error: {type(error).__name__}")
     return ExecutionError(code=code, message=message)
+
+
+def _model_failure_http_status(error: BaseException) -> int | Literal["none"]:
+    """Inspect chained provider failures without logging request or response contents."""
+
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        status = getattr(current, "status_code", None)
+        if not isinstance(status, int):
+            status = getattr(getattr(current, "response", None), "status_code", None)
+        if isinstance(status, int) and 100 <= status <= 599:
+            return status
+        next_error = current.__cause__
+        if next_error is None and not current.__suppress_context__:
+            next_error = current.__context__
+        current = next_error
+    return "none"
 
 
 def _safe_exception_chain(error: BaseException | None) -> str:

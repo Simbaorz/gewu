@@ -316,12 +316,13 @@ async def test_runtime_uses_host_scene_path_and_bound_skill_state(
     scene = next(
         value for value in messages if value.payload.get("attachment_type") == "scene_reminder"
     )
-    assert "Scene name: Fault Scene." in scene.content
-    assert "Scene root path: /workspace/company/acme/department/ops/.scenes/fault." in scene.content
-    assert "Scene description: Fault troubleshooting." in scene.content
-    assert "Bound skill: `fault_workflow`." in scene.content
-    assert (
-        "invoke the `skill` tool with `fault_workflow` before handling this Scene" in scene.content
+    assert scene.content == (
+        "<system-reminder>\n"
+        "User-selected Scene:\n"
+        "- Scene name: Fault Scene\n"
+        "- Scene entry path: /workspace/company/acme/department/ops/.scenes/fault\n"
+        "- Bound skill: fault_workflow\n"
+        "</system-reminder>"
     )
     assert "tenant" not in scene.content
     assert messages[0].payload.get("llm_ignore") is None
@@ -390,9 +391,8 @@ async def test_scene_reminder_detects_already_invoked_bound_skill(
     scene = next(
         value for value in messages if value.payload.get("attachment_type") == "scene_reminder"
     )
-    assert "`fault_workflow` is already loaded" in scene.content
-    assert "continue following it for this Scene" in scene.content
-    assert "first invoke the `skill` tool" not in scene.content
+    assert "- Bound skill: fault_workflow" in scene.content
+    assert "Required workflow:" not in scene.content
 
 
 async def test_skill_turn_state_does_not_alias_persisted_nested_payload(
@@ -475,7 +475,7 @@ async def test_skill_listing_matches_subscriber_shape_and_exact_utf8_budget(
         )
 
 
-async def test_scene_reminder_omits_empty_description_and_explains_unbound_scene(
+async def test_scene_reminder_omits_unbound_skill(
     workspace: WorkspaceSession,
 ) -> None:
     scene_catalog = MemorySceneCatalog(
@@ -505,10 +505,13 @@ async def test_scene_reminder_omits_empty_description_and_explains_unbound_scene
 
     reminder = preparation.messages[-1]
     assert reminder["attachment_type"] == "scene_reminder"
-    assert "Scene description:" not in reminder["content"]
-    assert "Bound skill: none. No Scene-specific workflow is available." in reminder["content"]
-    assert "use file discovery and reading tools to inspect" in reminder["content"]
-    assert "first invoke the `skill` tool" not in reminder["content"]
+    assert reminder["content"] == (
+        "<system-reminder>\n"
+        "User-selected Scene:\n"
+        "- Scene name: Private Scene\n"
+        "- Scene entry path: /workspace/private/.scenes/Private Scene\n"
+        "</system-reminder>"
+    )
 
 
 async def test_scene_shadowed_required_skill_key_remains_unbound(
@@ -548,11 +551,10 @@ async def test_scene_shadowed_required_skill_key_remains_unbound(
     )
 
     reminder = preparation.messages[-1]["content"]
-    assert "Bound skill: none. No Scene-specific workflow is available." in reminder
-    assert "Bound skill: `review`." not in reminder
+    assert "Bound skill:" not in reminder
 
 
-async def test_scene_reminder_normalizes_and_truncates_long_description(
+async def test_scene_reminder_does_not_expand_description(
     workspace: WorkspaceSession,
 ) -> None:
     long_description = "  " + " \n ".join(["Fault"] * 80) + "  "
@@ -582,13 +584,7 @@ async def test_scene_reminder_normalizes_and_truncates_long_description(
         persisted_state=None,
     )
 
-    description_line = next(
-        line
-        for line in preparation.messages[-1]["content"].splitlines()
-        if line.startswith("Scene description:")
-    )
-    assert description_line.endswith("...")
-    assert len(description_line.removeprefix("Scene description: ")) == 240
+    assert "Scene description:" not in preparation.messages[-1]["content"]
     assert long_description not in preparation.messages[-1]["content"]
 
 
