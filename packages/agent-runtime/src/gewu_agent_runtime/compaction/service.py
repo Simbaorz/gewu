@@ -1038,6 +1038,9 @@ class CompactionService:
             value = message.payload.get("tool_call_id")
             if isinstance(value, str) and value:
                 values.add(value)
+            response_id = message.payload.get("assistant_message_id")
+            if isinstance(response_id, str) and response_id:
+                values.add(f"assistant:{response_id}")
         return values
 
     async def _summarize_persisted_range(

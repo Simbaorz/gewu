@@ -246,6 +246,8 @@ class ConversationContextBuilder:
         """Convert persisted messages while preserving tool-call structure."""
 
         converted: list[Message] = []
+        batch: list[ConversationMessage] = []
+        batch_id = ""
         for value in values:
             if (
                 skip_input_run_id
@@ -253,10 +255,48 @@ class ConversationContextBuilder:
                 and value.run_id == skip_input_run_id
             ):
                 continue
+            if value.payload.get("llm_ignore") is True:
+                continue
+            if value.kind is MessageKind.TOOL_USE:
+                response_id = str(value.payload.get("assistant_message_id") or value.message_id)
+                if batch and response_id != batch_id:
+                    converted.extend(cls._convert_tool_batch(batch))
+                    batch = []
+                batch_id = response_id
+                batch.append(value)
+                continue
+            if batch and value.kind in {MessageKind.TOOL_RESULT, MessageKind.META}:
+                batch.append(value)
+                continue
+            if batch:
+                converted.extend(cls._convert_tool_batch(batch))
+                batch = []
+                batch_id = ""
             message = cls.convert_message(value)
             if message is not None:
                 converted.append(message)
+        if batch:
+            converted.extend(cls._convert_tool_batch(batch))
         return converted
+
+    @classmethod
+    def _convert_tool_batch(cls, values: Sequence[ConversationMessage]) -> list[Message]:
+        """Restore one assistant response and place its results before tool-added hints."""
+
+        calls: list[ToolCall] = []
+        results: list[Message] = []
+        extra: list[Message] = []
+        for value in values:
+            message = cls.convert_message(value)
+            if message is None:
+                continue
+            if value.kind is MessageKind.TOOL_USE:
+                calls.extend(message.tool_calls)
+            elif value.kind is MessageKind.TOOL_RESULT:
+                results.append(message)
+            else:
+                extra.append(message)
+        return [Message.assistant(values[0].content, calls), *results, *extra]
 
     @classmethod
     def convert_message(cls, value: ConversationMessage) -> Message | None:

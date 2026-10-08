@@ -1433,6 +1433,7 @@ class AgentRuntime:
                 kind=MessageKind.TOOL_USE,
                 content=event.assistant_text,
                 payload={
+                    "assistant_message_id": event.assistant_message_id,
                     "tool_call_id": event.call.tool_call_id,
                     "tool_name": event.call.name,
                     "arguments": event.call.arguments,
@@ -1539,6 +1540,9 @@ class AgentRuntime:
                 yield AssistantFinal(message_id=message.message_id, content=message.content)
             elif message.kind is MessageKind.TOOL_USE:
                 yield ToolUse(
+                    assistant_message_id=str(
+                        message.payload.get("assistant_message_id") or message.message_id
+                    ),
                     call=ToolCall(
                         tool_call_id=str(message.payload.get("tool_call_id") or ""),
                         name=str(message.payload.get("tool_name") or ""),

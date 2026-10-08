@@ -951,6 +951,31 @@ async def test_next_generation_uses_previous_summary_and_only_new_messages(
     assert all("old question" not in request[1].content for request in model.requests)
 
 
+def test_compaction_boundary_cannot_split_one_assistant_tool_batch() -> None:
+    messages = []
+    for index, call_id in enumerate(("first", "second")):
+        messages.extend(
+            (
+                ConversationMessage(
+                    conversation_id="conversation",
+                    sequence=index * 2 + 1,
+                    role=MessageRole.ASSISTANT,
+                    kind=MessageKind.TOOL_USE,
+                    payload={"assistant_message_id": "response", "tool_call_id": call_id},
+                ),
+                ConversationMessage(
+                    conversation_id="conversation",
+                    sequence=index * 2 + 2,
+                    role=MessageRole.TOOL,
+                    kind=MessageKind.TOOL_RESULT,
+                    payload={"tool_call_id": call_id},
+                ),
+            )
+        )
+    assert CompactionService._boundary_pairs_are_complete(messages, 2) is False
+    assert CompactionService._boundary_pairs_are_complete(messages, 4) is True
+
+
 async def test_micro_compact_runs_once_and_can_avoid_full_compact(
     principal: PrincipalRef,
 ) -> None:

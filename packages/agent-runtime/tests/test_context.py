@@ -171,6 +171,53 @@ def test_context_converts_persisted_turn_events_to_model_messages() -> None:
     ]
 
 
+def test_context_groups_only_explicit_assistant_response_ids() -> None:
+    history = []
+    for index, group in enumerate(("response-A", "response-A", "response-B"), start=1):
+        history.extend(
+            (
+                _message(
+                    index * 2,
+                    MessageKind.TOOL_USE,
+                    MessageRole.ASSISTANT,
+                    "same text",
+                    payload={
+                        "assistant_message_id": group,
+                        "tool_call_id": f"call-{index}",
+                        "tool_name": "read",
+                        "arguments": {"path": f"/{index}"},
+                    },
+                ),
+                _message(
+                    index * 2 + 1,
+                    MessageKind.TOOL_RESULT,
+                    MessageRole.TOOL,
+                    payload={
+                        "tool_call_id": f"call-{index}",
+                        "result": {"value": index},
+                        "trace_result": False,
+                    },
+                ),
+            )
+        )
+    converted = ConversationContextBuilder.convert_messages(history)
+    assert [
+        tuple(call.tool_call_id for call in message.tool_calls)
+        for message in converted
+        if message.tool_calls
+    ] == [("call-1", "call-2"), ("call-3",)]
+    assert [message.role.value for message in converted] == [
+        "assistant",
+        "tool",
+        "tool",
+        "assistant",
+        "tool",
+    ]
+    assert all(
+        message.trace_result is False for message in converted if message.role.value == "tool"
+    )
+
+
 def test_context_restores_trace_policy_without_serializing_it_to_provider_payload() -> None:
     converted = ConversationContextBuilder.convert_messages(
         (_tool_result(1, {"value": "sensitive"}, trace_result=False),)

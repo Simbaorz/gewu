@@ -125,6 +125,7 @@ class AgentEngine:
                     tool_calls,
                     assistant_text,
                     request.tools,
+                    assistant_message_id=message_id,
                 ):
                     yield event
                     if isinstance(event, AskRequested):
@@ -176,10 +177,15 @@ class AgentEngine:
         calls: Sequence[ToolCall],
         assistant_text: str,
         tools: Sequence[ModelTool],
+        *,
+        assistant_message_id: str,
     ) -> AsyncIterator[AgentEvent]:
+        extra_messages: list[Message] = []
         for call in calls:
             yield ToolUse(
-                call=call, assistant_text=assistant_text if assistant_text.strip() else ""
+                call=call,
+                assistant_text=assistant_text if assistant_text.strip() else "",
+                assistant_message_id=assistant_message_id,
             )
             result = await self._tools.execute(call)
             if result.mode is ToolResultMode.SUSPENDED:
@@ -205,9 +211,10 @@ class AgentEngine:
                 )
             )
             if result.new_messages:
-                messages[:] = _normalize_messages(
-                    [*messages, *(_extra_message(item) for item in result.new_messages)]
-                )
+                extra_messages.extend(_extra_message(item) for item in result.new_messages)
+        # A provider tool-call batch must be followed by all of its results before hints.
+        if extra_messages:
+            messages[:] = _normalize_messages([*messages, *extra_messages])
 
 
 def _messages_have_images(messages: Sequence[Message]) -> bool:

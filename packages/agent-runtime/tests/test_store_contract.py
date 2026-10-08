@@ -79,6 +79,42 @@ async def runtime_store(request: pytest.FixtureRequest) -> AsyncIterator[Runtime
     await engine.dispose()
 
 
+async def test_stored_tool_response_groups_survive_paged_history(
+    runtime_store: RuntimeStore,
+    principal: PrincipalRef,
+) -> None:
+    from gewu_agent_runtime.context import ConversationContextBuilder
+
+    conversation = await runtime_store.create_conversation(Conversation(owner=principal))
+    messages = []
+    for call_id in ("first", "second"):
+        messages.extend(
+            (
+                NewConversationMessage(
+                    role=MessageRole.ASSISTANT,
+                    kind=MessageKind.TOOL_USE,
+                    payload={
+                        "assistant_message_id": "response",
+                        "tool_call_id": call_id,
+                        "tool_name": "lookup",
+                        "arguments": {},
+                    },
+                ),
+                NewConversationMessage(
+                    role=MessageRole.TOOL,
+                    kind=MessageKind.TOOL_RESULT,
+                    payload={"tool_call_id": call_id, "result": {"value": call_id}},
+                ),
+            )
+        )
+    await runtime_store.append_messages(conversation.conversation_id, tuple(messages))
+    restored = await ConversationContextBuilder(runtime_store, history_page_size=1).build(
+        conversation.conversation_id
+    )
+    assert [message.role.value for message in restored] == ["assistant", "tool", "tool"]
+    assert tuple(call.tool_call_id for call in restored[0].tool_calls) == ("first", "second")
+
+
 async def test_store_allocates_sequences_and_transitions_run(
     runtime_store: RuntimeStore,
     principal: PrincipalRef,

@@ -59,6 +59,7 @@ class ToolUse(BaseModel):
     model_config = ConfigDict(frozen=True)
     type: Literal[EventType.TOOL_USE] = EventType.TOOL_USE
     message_id: str = Field(default_factory=new_id)
+    assistant_message_id: str = Field(default_factory=new_id, min_length=1)
     call: ToolCall
     assistant_text: str = ""
 

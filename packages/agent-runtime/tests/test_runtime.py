@@ -2051,6 +2051,108 @@ async def test_runtime_suspends_and_resumes_ask(
     assert "transport_only" not in model.requests[-1][0][-2].content
 
 
+@pytest.mark.parametrize("ask_in_batch", [False, True])
+@pytest.mark.parametrize("answer_status", ["answered", "skipped"])
+async def test_runtime_rebuilds_tool_batches_after_ask_and_next_turn(
+    principal: PrincipalRef,
+    workspace: WorkspaceSession,
+    ask_in_batch: bool,
+    answer_status: Literal["answered", "skipped"],
+) -> None:
+    @tool(description="Return a value with a context hint.")
+    def lookup(value: str) -> ToolResult:
+        return ToolResult(
+            output={"value": value},
+            new_messages=({"role": "user", "content": f"hint:{value}"},),
+        )
+
+    calls = (
+        ToolCall(tool_call_id="first", name="lookup", arguments={"value": "A"}),
+        ToolCall(tool_call_id="second", name="lookup", arguments={"value": "B"}),
+    )
+    ask_call = ToolCall(
+        tool_call_id="clarify",
+        name="ask_user",
+        arguments={
+            "questions": [
+                {
+                    "question": "Continue?",
+                    "header": "Next",
+                    "options": [{"label": "Yes"}, {"label": "No"}],
+                }
+            ]
+        },
+    )
+    responses = [
+        [
+            ModelStreamChunk(
+                content_delta="checking", tool_calls=(*calls, ask_call) if ask_in_batch else calls
+            )
+        ]
+    ]
+    if not ask_in_batch:
+        responses.append([ModelStreamChunk(content_delta="checking", tool_calls=(ask_call,))])
+    responses.extend(
+        [
+            [ModelStreamChunk(content_delta="confirmed")],
+            [ModelStreamChunk(content_delta="next turn")],
+        ]
+    )
+    model = ScriptedChatModel(responses)
+    store = InMemoryRuntimeStore()
+    runtime = AgentRuntime(store=store)
+    bindings = TurnBindings(
+        model=model, workspace=workspace, tool_set=ToolSet((lookup, ask_user_tool()))
+    )
+    session = await runtime.start_turn(TurnRequest(invoker=principal, content="run"), bindings)
+    first_events = [event async for event in session.stream()]
+    pending = first_events[-1]
+    assert isinstance(pending, AskRequested)
+
+    # A new Runtime instance must reconstruct the original model response from storage.
+    restarted = AgentRuntime(store=store)
+    resumed = await restarted.resume_ask(
+        run_id=session.run_id,
+        invoker=principal,
+        answer=AskAnswer(ask_id=pending.ask_id, answers={"Continue?": "No"}, status=answer_status),
+        bindings=bindings,
+    )
+    assert isinstance([event async for event in resumed.stream()][-1], AssistantFinal)
+    restored = model.requests[-1][0]
+    expected_groups = (
+        [("first", "second", "clarify")] if ask_in_batch else [("first", "second"), ("clarify",)]
+    )
+    assert [
+        tuple(call.tool_call_id for call in message.tool_calls)
+        for message in restored
+        if message.tool_calls
+    ] == expected_groups
+    assert [message.content for message in restored if message.tool_calls] == ["checking"] * len(
+        expected_groups
+    )
+    first_group_index = next(i for i, message in enumerate(restored) if message.tool_calls)
+    result_count = 3 if ask_in_batch else 2
+    assert all(
+        message.role.value == "tool"
+        for message in restored[first_group_index + 1 : first_group_index + 1 + result_count]
+    )
+    assert "hint:A" in restored[first_group_index + 1 + result_count].content
+    uses = [event for event in first_events if isinstance(event, ToolUse)]
+    assert uses[0].assistant_message_id == uses[1].assistant_message_id
+    assert (uses[1].assistant_message_id == uses[2].assistant_message_id) is ask_in_batch
+
+    following = await restarted.start_turn(
+        TurnRequest(invoker=principal, conversation_id=session.conversation_id, content="continue"),
+        bindings,
+    )
+    assert isinstance([event async for event in following.stream()][-1], AssistantFinal)
+    assert [
+        tuple(call.tool_call_id for call in message.tool_calls)
+        for message in model.requests[-1][0]
+        if message.tool_calls
+    ] == expected_groups
+
+
 async def test_runtime_resume_resolves_model_after_answer_commit(
     principal: PrincipalRef,
     workspace: WorkspaceSession,
